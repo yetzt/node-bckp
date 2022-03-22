@@ -49,5 +49,10 @@ example: [config.dist.js](./config.dist.js)
 ## todo
 
 * restore
+* symmetric encryption
 * public key encryption
 * transfert to remote storage
+* better parallelisation
+* make cronable
+* minimum age of latest backup
+* delete after retention
