@@ -14,7 +14,7 @@ const unq = require("unq");
 const quu = require("quu");
 const walker = require("walker");
 const moment = require("moment");
-const lzma = require("lzma-native");
+//const lzma = require("lzma-native");
 const zlib = require("zlib");
 const filesize = require("filesize");
 

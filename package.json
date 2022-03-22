@@ -1,6 +1,6 @@
 {
   "name": "bckp",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "a backup tool",
   "bin": {
     "bckp": "bin/bckp.js"
