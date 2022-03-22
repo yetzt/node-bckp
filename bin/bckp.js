@@ -92,7 +92,7 @@ const bckp = function(src, fn){
 				if (mtime <= stat.mtimeMs) return debug("[%s] no change".grey, src.id), fn(null);
 
 				// rotate 
-				const rotatedate = moment(stat.mtime).format("YYYYMMDD");
+				const rotatedate = moment(stat.mtime).format(config.datefmt||"YYYYMMDD");
 				const rotatedest = path.resolve(destdir, [ src.id, rotatedate, extension ].join("."));
 				
 				fs.rename(dest, rotatedest, function(err){
