@@ -27,7 +27,7 @@ module.exports = {
 	src: [{
 		id: "etc", // identifier → $id.$date.tar.$compress
 		dir: "/etc", // one archive
-		compress: "xz", // compression: gz|xz|br
+		compress: "gz", // compression: gz|br
 		exclude: [ // per-source exclude list
 			"**/*-"
 		]

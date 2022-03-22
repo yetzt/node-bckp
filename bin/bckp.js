@@ -133,8 +133,8 @@ const backup = function(srcdir, dest, exclude, compress, encrypt, fn){
 	
 	if (compress) {
 		switch (compress) {
-			case "xz":
-				stream = stream.pipe(lzma.createCompressor({ threads: concurrency }));
+//			case "xz":
+//				stream = stream.pipe(lzma.createCompressor({ threads: concurrency }));
 			break;
 			case "gz":
 				stream = stream.pipe(zlib.createGzip());

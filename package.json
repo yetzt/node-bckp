@@ -1,6 +1,6 @@
 {
   "name": "bckp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "a backup tool",
   "bin": {
     "bckp": "bin/bckp.js"
@@ -11,7 +11,6 @@
     "colrz": "^0.0.3",
     "debug": "^4.3.4",
     "filesize": "^8.0.7",
-    "lzma-native": "^7.0.1",
     "minimatch": "^5.0.1",
     "moment": "^2.29.1",
     "quu": "^0.4.1",
