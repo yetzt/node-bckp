@@ -67,7 +67,7 @@ const bckp = function(src, fn){
 
 	const dest = path.resolve(destdir, [ src.id, "latest", extension ].join("."));
 
-	fs.mkdir(destdir, { recursive: true, mode: 0o700 }, function(err){
+	fs.mkdir(path.dirname(dest), { recursive: true, mode: 0o700 }, function(err){
 		if (err) return debug("%s".red, err), fn(err);
 		
 		// check if latest already exists
