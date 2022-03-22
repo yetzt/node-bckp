@@ -76,7 +76,10 @@ const bckp = function(src, fn){
 		
 			// shortcut: initial backup without checking
 			if (err && err.code === "ENOENT") {
+
 				// create initial backup
+				debug("[%s] initial backup".magenta, src.id);
+
 				const time_start = Date.now();
 				return backup(src.dir, dest, exclude, compress, false, function(err, stat){
 					if (err) return debug("[%s] %s".red, src.id, err), fn(err);
@@ -98,8 +101,9 @@ const bckp = function(src, fn){
 				fs.rename(dest, rotatedest, function(err){
 					if (err) return debug("%s".red, err), fn(err);
 					debug("[%s] rotate latest → %s".cyan, src.id, rotatedate);
+					debug("[%s] fresh backup".magenta, src.id);
 
-					// backup
+					// create fresh backup
 					const time_start = Date.now();
 					return backup(src.dir, dest, exclude, compress, false, function(err, stat){
 						if (err) return debug("[%s] %s".red, src.id, err), fn(err);
