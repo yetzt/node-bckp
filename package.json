@@ -1,23 +1,30 @@
 {
   "name": "bckp",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "description": "a backup tool",
+  "main": "lib/bckp.js",
   "bin": {
     "bckp": "bin/bckp.js"
   },
+  "main": "lib/bckp.js",
   "author": "yetzt <bckp@yetzt.me>",
   "license": "Unlicense",
   "dependencies": {
     "colrz": "^0.0.3",
     "debug": "^4.3.4",
     "filesize": "^8.0.7",
+    "glob": "^7.2.0",
     "minimatch": "^5.0.1",
-    "moment": "^2.29.1",
-    "quu": "^0.4.1",
-    "supports-color": "^9.2.1",
+    "moment": "^2.29.2",
+    "node-aescrypt": "^1.0.8",
+    "node-liblzma": "^1.1.9",
+    "quu": "^0.4.2",
+    "readline-sync": "^1.4.10",
+    "supports-color": "^9.2.2",
     "tar": "^6.1.11",
     "unq": "^0.0.2",
     "walker": "^1.0.8",
+    "worker-farm": "^1.7.0",
     "yargs-parser": "^21.0.1"
   }
 }

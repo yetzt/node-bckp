@@ -1,5 +1,4 @@
 module.exports = {
-	dest: "/var/backup", // local backup destination
 	datefmt: "YYYYMMDD", // date format
 	concurrency: 8, // concurrent backups
 	exclude: [ // global exclude list
@@ -9,18 +8,17 @@ module.exports = {
 		"**/*~",
 		"**/.DS_Store",
 	],
-	src: [{
-		id: "etc", // identifier → $id.$date.tar.$compress
+	jobs: [{
+		id: "etc", // identifier → $id.$date.tar[.$compress][.aes]
 		dir: "/etc", // one archive
+		dest: "/opt/backup", // local backup destination
 		compress: "xz", // compression: gz|xz|br
-		exclude: [ // per-source exclude list
-			"**/*-"
-		]
+		encrypt: "replace-this-with-a-password"
 	},{
 		id: "www",
 		dir: "/var/www/*", // separate archives per subfolder
 		compress: "gz",
-		exclude: [
+		exclude: [ // per-source exclude list
 			"**/*_OLD",
 			"**/.htpasswd"
 			"**/logs"

@@ -1,213 +1,173 @@
 #!/usr/bin/env node
 
-const argv = require("yargs-parser")(process.argv.slice(2), { alias: { quiet: ["q"], config: ["c"], concurrency: ["p"] }, number: ["concurrency"], boolean: ["quiet"] });
-require("colrz");
-
-if (!argv.quiet) process.env.DEBUG = process.env.DEBUG || "bckp";
-
-const fs = require("fs");
 const path = require("path");
-const debug = require("debug")("bckp");
-const tar = require("tar");
-const minimatch = require("minimatch");
 const unq = require("unq");
 const quu = require("quu");
-const walker = require("walker");
-const moment = require("moment");
-//const lzma = require("lzma-native");
-const zlib = require("zlib");
-const filesize = require("filesize");
 
-// load config
-if ((!argv.config || (typeof argv.config) !== "string") && argv._.length === 0) console.error("Missing config:\n\tbackup [backup|restore] [-c] config.js".red), process.exit(1);
+// parse args
+const argv = require("yargs-parser")(process.argv.slice(2), { 
+	alias: { 
+		verbose: ["v"],
+		help: ["h","?"],
+		config: ["c"], 
+		concurrency: ["p"],
+		source: ["s","dir"],
+		dest: ["d"],
+		encrypt: ["e"],
+		compress: ["z"],
+		exclude: ["x"],
+		date: ["t"],
+		name: ["n","id"],
+		symlinks: ["l"],
+		force: ["f"],
+//		remote: ["r"],
+//		key: ["k"],
+	}, 
+	string: ["config","source","dest"], 
+	number: ["concurrency"], 
+	array: [{ key: "exclude", string: true }], 
+	boolean: ["verbose", "help", "force"],
+	normalize: true,
+});
 
-let config;
-try {
-	config = require(path.resolve(process.cwd(), argv.config || argv._[0]));
-} catch (err) {
-	console.error("Unable to load config:\n\tbackup [backup|restore] [-c] config.js".red), process.exit(1);
+const usage = function usage(code){
+	console.error("Usage: %s [options] [config]", path.basename(process.argv[1]));
+	console.error("");
+	console.error("Global options:");
+	console.error("      -h --help                   Show this help message");
+	console.error("      -v --verbose                Show debug information");
+	console.error("      -f --force                  Create backup regardless of changes");
+	console.error("      -p --concurrency <num>      Maximum number of parallel streams (Default: Number of CPU cores - 1)");
+	console.error("");
+	console.error("Use Config:");
+	console.error("   [ -c --config ] config.js         Use config file (Direct options are ignored)");
+	console.error("                                     Example: %s", path.resolve(__dirname,"../congig.dist.js"));
+	console.error("Direct options:");
+	console.error("   -n --name name                 Name of the destination file (name.<date>.tar[.gz|.br|.xz][.aes])");
+	console.error("   -s --dir /dir                  Create a backup of this directory");
+	console.error("   -s --dir /dir/*                Create a backup of all directories in this directory");
+	console.error("   -d --dest /dir                 Save the backup in this location");
+	console.error("   [ -z --compress [gz|br|xz] ]   Compress the archive with gzip, brotli or lzma (default: gzip)");
+	console.error("   [ -e --encrypt [password] ]    Encrypt the archive compatible to aescrypt with this password");
+	console.error("                                     (otherwise env.AESCRYPT_PASSWORD or prompt on tty is used)");
+	console.error("   [ -x --exclude pattern ]       Exlude files matching pattern from backup (repeatable for multiple patterns)");
+	console.error("   [ -t --date format ]           Specify date format (Default: YYYYMMDD)");
+	console.error("   [ -l --symlinks ]              Follow Symlinks (Default: No)");
+//	console.error("   [ -r --remote <remote> ]       Copy to remote host using scp");
+//	console.error("                                     remote: user@host:port/path");
+//	console.error("   [ -k --key <keyfile> ]               Use SSH private key in this file (Default: Default SSH key)");
+	console.error("");
+	process.exit(code||0);
 }
 
-const concurrency = Number.isInteger(argv.concurrency) ? argv.concurrency: (config.concurrency || Math.max(1, require("os").cpus().length-1));
+if (argv.help) usage();
+if (argv.verbose) process.env.DEBUG = process.env.DEBUG || "bckp";
 
-const q = quu(concurrency, true);
-
-const bckp = function(src, fn){
-	if (!src.id) return fn(new Error("No id"));
-
-	const exclude = [ ...(config.exclude||[]), ...(src.exclude||[]) ];
-	
-	if (src.dir.substr(-2) === path.sep+"*") {
-		const dir = src.dir.substr(0,src.dir.length-2);
-		return subdirs(dir, exclude, function(err, dirs){
-			if (err) return fn(err);
-			
-			dirs.forEach(function(dir){
-				q.push(function(next){
-					bckp({
-						...src,
-						dir: dir,
-						id: [src.id, path.basename(dir)].join(path.sep),
-					}, next);
-					
-				});
-				
-			});
-			
-		});
+let config;
+if ((argv.config && (typeof argv.config) === "string") || (argv._.length > 0) && ((typeof argv._[0]) == "string")) {
+	try {
+		config = require(path.resolve(process.cwd(), argv.config || argv._[0]));
+	} catch (err) {
+		console.error("Unable to load config file %s", (argv.config || argv._[0]));
+		usage(1);
 	}
-
-	const compress = (((src.hasOwnProperty("compress")) ? src.compress : config.compress) || false);
-
-	const destdir = ((src.hasOwnProperty("dest")) ? src.dest : config.dest);
 	
-	if (!destdir) return debug("%s — No destination directory".red, src.id), fn(new Error("No destination directory"));
-
-	const extension = (!!compress) ? "tar."+compress : "tar";
-
-	const dest = path.resolve(destdir, [ src.id, "latest", extension ].join("."));
-
-	fs.mkdir(path.dirname(dest), { recursive: true, mode: 0o700 }, function(err){
-		if (err) return debug("%s".red, err), fn(err);
+	// fix global opts
+	if (!config.exclude || !(config.exclude instanceof Array)) config.exclude = [];
+	if (!config.datefmt || typeof config.datefmt !== "string") config.datefmt = "YYYYMMDD";
+	config.symlinks = !!config.symlinks;
+	
+	if (!config.hasOwnProperty("jobs") || !(config.jobs instanceof Array)) return console.error("No Jobs specified"), usage(1);
+	
+	config.force = config.force || argv.force;
+	
+	// merge global options into src options
+	config.jobs = config.jobs.map(function(src){
 		
-		// check if latest already exists
-		fs.stat(dest, function(err, stat){
-			if (err && err.code !== "ENOENT") return debug("%s".red, err), fn(err);
-		
-			// shortcut: initial backup without checking
-			if (err && err.code === "ENOENT") {
+		if (!src.dest) src.dest = config.dest;
 
-				// create initial backup
-				debug("[%s] initial backup".magenta, src.id);
+		if (!src.datefmt) src.datefmt = config.datefmt;
 
-				const time_start = Date.now();
-				return backup(src.dir, dest, exclude, compress, false, function(err, stat){
-					if (err) return debug("[%s] %s".red, src.id, err), fn(err);
-					debug("[%s] %s | %ss".green, src.id, filesize(stat.size), ((Date.now()-time_start)/1000).toFixed(2));
-					return fn(null);
-				});
-			
+		if (!src.hasOwnProperty("symlinks")) src.symlinks = config.symlinks;
+		src.symlinks = !!src.symlinks;
+
+		if (!src.exclude || !(src.exclude instanceof Array)) src.exclude = [];
+		src.exclude = unq([ ...config.exclude, ...src.exclude ]);
+
+		if (!src.hasOwnProperty("encrypt")) src.encrypt = config.encrypt;
+		if (!!src.encrypt) {
+			if (typeof src.encrypt === "string") {
+				src.password = src.encrypt;
+			} else if (config.hasOwnProperty("password") && !!config.password && typeof config.password === "string") {
+				src.password = config.password;
+			} else if (!!process.env.AESCRYPT_PASSWORD && typeof process.env.AESCRYPT_PASSWORD === "string") {
+				src.password = process.env.AESCRYPT_PASSWORD;
+			} else if (process.stdout.isTTY) {
+				let password = require("readline-sync").question("Encryption password: ", { hideEchoBack: true });
+				if (!password) {
+					console.error("No encyryption password specified");
+					usage(1);
+				};
+				argv.encrypt = password;
+			} else {
+				console.error("No encyryption password specified");
+				usage(1);
 			}
+		}
 		
-			modified(src.dir, exclude, function(err, mtime){
-
-				if (err) return debug("[%s] %s".red, src.id, err), fn(err);
-				if (mtime <= stat.mtimeMs) return debug("[%s] no change".grey, src.id), fn(null);
-
-				// rotate 
-				const rotatedate = moment(stat.mtime).format(config.datefmt||"YYYYMMDD");
-				const rotatedest = path.resolve(destdir, [ src.id, rotatedate, extension ].join("."));
-				
-				fs.rename(dest, rotatedest, function(err){
-					if (err) return debug("%s".red, err), fn(err);
-					debug("[%s] rotate latest → %s".cyan, src.id, rotatedate);
-					debug("[%s] fresh backup".magenta, src.id);
-
-					// create fresh backup
-					const time_start = Date.now();
-					return backup(src.dir, dest, exclude, compress, false, function(err, stat){
-						if (err) return debug("[%s] %s".red, src.id, err), fn(err);
-						debug("[%s] %s | %ss".green, src.id, filesize(stat.size), ((Date.now()-time_start)/1000).toFixed(2));
-						return fn(null);
-					});
-
-				});
-				
-			});
-		
-		});
-		
+		return src;
+	}).filter(function(src,i){ // checks
+		if (!src.id) return console.error("No `id` for source #%d",i), usage(1);
+		if (!src.dest) return console.error("No `dest` for ", src.id), usage(1);
+		if (!src.dir) return console.error("No `dir` for ", src.id), usage(1);
+		return !src.disabled;
 	});
 	
-};
-
-const backup = function(srcdir, dest, exclude, compress, encrypt, fn){
-		
-	let stream = tar.create({
-		filter: function(filepath, stat){
-			return !exclude.find(function(pattern){
-				return minimatch(filepath, pattern);
-			});
-		},
-	}, [ srcdir ]);
+} else {
+	// check required options
+	if (!argv.name) return console.error("Error: Missing `-n` or `--name` option"), usage(1);
+	if (!argv.source) return console.error("Error: Missing `-s` or `--source` option"), usage(1);
+	if (!argv.dest) return console.error("Error: Missing `-d` or `--dest` option"), usage(1);
 	
-	if (compress) {
-		switch (compress) {
-//			case "xz":
-//				stream = stream.pipe(lzma.createCompressor({ threads: concurrency }));
-//			break;
-			case "gz":
-				stream = stream.pipe(zlib.createGzip());
-			break;
-			case "br":
-				stream = stream.pipe(zlib.createBrotliCompress());
-			break;
+	// check encrypt / password
+	if (argv.encrypt === true) {
+		if (!!process.env.AESCRYPT_PASSWORD) {
+			arg.encrypt = process.env.AESCRYPT_PASSWORD;
+		} else if (process.stdout.isTTY) {
+			let password = require("readline-sync").question("Encryption password: ", { hideEchoBack: true });
+			if (!password) {
+				console.error("No encyryption password specified");
+				usage(1);
+			};
+			argv.encrypt = password;
+		} else {
+			console.error("No encyryption password specified");
+			usage(1);
 		}
 	}
 
-	// FIXME encrypt
-	
-	// create random tmp name
-	const tmpdest = dest+"."+(Math.round(Math.random()*60466176).toString(36))+".tmp";
-	
-	stream.pipe(fs.createWriteStream(tmpdest)).on("close", function(){
-		fs.rename(tmpdest, dest, function(err){
-			if (err) return fn(err);
-			fs.stat(dest, fn);
-		});
-	});
-	
-	// FIXME handle error
-	
-};
+	config = {
+		concurrency: argv.concurrency || Math.max(1, require("os").cpus().length-1),
+		force: !!argv.force,
+		jobs: [{
+			id: argv.id,
+			dir: argv.dir,
+			dest: argv.dest,
+			compress: argv.compress || false,
+			encrypt: !!argv.encrypt,
+			password: argv.encrypt || undefined,
+			symlinks: argv.symlinks || false,
+			datefmt: argv.date || "YYYYMMDD",
+			exclude: (!!argv.exclude) ? unq(argv.exclude.filter(function(v){ return !!v })) : [],
+		}],
+	}
 
-const subdirs = function(dir, exclude, fn){
-	fs.readdir(dir, function(err, files){
-		if (err) return fn(err);
-		const sq = quu(10,true);
-		const result = [];
-		files.map(function(file){
-			sq.push(function(next){
-				const p = path.resolve(dir, file);
-				// test exclusions
-				if (exclude.length && exclude.find(function(pattern){
-					return minimatch(p, pattern);
-				})) return next();
-				fs.stat(p, function(err,stats){
-					if (!err && stats.isDirectory()) result.push(p);
-					return next();
-				});
-			});
-		});
-		sq.run(function(){
-			return fn(null, result);
-		});
-	});
-};
-
-// find the greatest mtime within a direcotry
-const modified = function(dir, exclude, fn) {
-	let mtime = 0;
-	walker(dir).filterDir(function(subdir, stat) {
-		return !(exclude.length && exclude.find(function(pattern){
-			return minimatch(subdir, pattern);
-		}));
-	}).on('file', function(file, stat){
-		if (exclude.length && exclude.find(function(pattern){
-			return minimatch(file, pattern);
-		})) return;
-		if (stat.mtimeMs > mtime) mtime = stat.mtimeMs;
-	}).on('end', function(){
-		return fn(null, mtime);
-	});
 }
 
-config.src.forEach(function(src){
-	q.push(function(next){
-		bckp(src, next);
-	});
-});
-
-q.run(function(errs){
-	if (errs.length > 0) process.exit(1);
+require("../lib/bckp")({
+	concurrency: config.concurrency,
+	force: config.force,
+}).run(config.jobs,function(err){
+	if (err) return console.error(err), process.exit(1);
+	process.exit(0);
 });
